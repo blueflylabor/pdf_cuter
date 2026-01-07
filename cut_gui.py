@@ -1,165 +1,117 @@
-import os
-import sys
-
-# 解决 PyQt6 插件路径问题
-os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = ""
+import tkinter as tk
+from tkinter import filedialog, messagebox
 import fitz  # PyMuPDF
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QFileDialog, QLabel, QMessageBox)
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
-from PyQt6.QtCore import Qt, QSize
+from PIL import Image, ImageTk
+import os
 
-class PDFCutter(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("PDF 试卷精准切分工具 - 锁定增强版")
-        self.resize(1100, 850)
+class PDFCutterTK:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("PDF 试卷精准切分工具 (Tkinter 稳定版)")
+        self.root.geometry("1100x850")
 
         self.doc = None
-        self.temp_png = "temp_preview.png"
-        self.split_ratio = 0.5 
-        self.original_pixmap = None  
-        self.fixed_display_size = None 
-        self.is_locked = False  # 是否锁定切割线
+        self.original_image = None
+        self.display_image = None
+        self.tk_image = None
+        self.split_ratio = 0.5
+        self.is_locked = False
 
         self.init_ui()
 
     def init_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        layout = QVBoxLayout(main_widget)
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(pady=10)
 
-        # 按钮区
-        btn_layout = QHBoxLayout()
-        self.btn_open = QPushButton("1. 选择 PDF 文件")
-        self.btn_open.setFixedHeight(50)
-        self.btn_open.clicked.connect(self.open_pdf)
-        
-        self.btn_save = QPushButton("2. 导出为 A4 纵向 PDF")
-        self.btn_save.setFixedHeight(50)
-        self.btn_save.setEnabled(False)
-        self.btn_save.clicked.connect(self.save_pdf)
-        
-        btn_layout.addWidget(self.btn_open)
-        btn_layout.addWidget(self.btn_save)
-        layout.addLayout(btn_layout)
+        self.btn_open = tk.Button(btn_frame, text="1. 选择 PDF 文件", command=self.open_pdf, 
+                                 width=20, height=2, bg="#4CAF50", fg="black", font=("Arial", 10, "bold"))
+        self.btn_open.pack(side=tk.LEFT, padx=10)
 
-        # 状态信息显示区 (增强可见度)
-        self.info_label = QLabel("操作指引：请先加载 PDF 试卷")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.info_label.setFixedHeight(40)
-        # 黑色背景，白色粗体，非常醒目
-        self.info_label.setStyleSheet("""
-            background-color: #333; 
-            color: #FFFFFF; 
-            font-size: 16px; 
-            font-weight: bold; 
-            border-radius: 5px;
-        """)
-        layout.addWidget(self.info_label)
+        self.btn_save = tk.Button(btn_frame, text="2. 导出为 A4 PDF", command=self.save_pdf, 
+                                 width=20, height=2, state=tk.DISABLED, bg="#2196F3", fg="black", font=("Arial", 10, "bold"))
+        self.btn_save.pack(side=tk.LEFT, padx=10)
 
-        # 预览区域
-        self.preview_label = QLabel("等待加载预览...")
-        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setStyleSheet("border: 2px solid #555; background: #222; margin: 5px;")
-        
-        self.preview_label.setMouseTracking(True)
-        self.preview_label.mousePressEvent = self.on_mouse_press
-        self.preview_label.mouseMoveEvent = self.on_mouse_move
-        layout.addWidget(self.preview_label, stretch=1)
+        self.info_label = tk.Label(self.root, text="请先加载 PDF 试卷", font=("Arial", 12, "bold"), 
+                                  bg="#333", fg="white", height=2)
+        self.info_label.pack(fill=tk.X, padx=20)
+
+        self.canvas = tk.Canvas(self.root, bg="#222", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        self.canvas.bind("<Motion>", self.on_mouse_move)
+        self.canvas.bind("<Button-1>", self.on_mouse_click)
+        # 使用 lambda 延迟处理 resize，防止初始化时报错
+        self.root.bind("<Configure>", lambda e: self.refresh_view() if self.original_image else None)
 
     def open_pdf(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择 PDF", "", "PDF Files (*.pdf)")
+        file_path = filedialog.askopenfilename(filetypes=[("PDF Files", "*.pdf")])
         if file_path:
             try:
                 self.doc = fitz.open(file_path)
                 page = self.doc[0]
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                pix.save(self.temp_png)
-                
-                self.original_pixmap = QPixmap(self.temp_png)
-                
-                # 锁定显示尺寸，防止抖动
-                available_size = self.preview_label.size() - QSize(40, 40)
-                temp_scaled = self.original_pixmap.scaled(
-                    available_size, 
-                    Qt.AspectRatioMode.KeepAspectRatio, 
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                self.fixed_display_size = temp_scaled.size()
+                self.original_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 
                 self.is_locked = False
-                self.btn_save.setEnabled(True)
-                self.update_display()
+                self.btn_save.config(state=tk.NORMAL)
+                self.root.after(100, self.refresh_view) # 延迟刷新确保画布尺寸已计算
             except Exception as e:
-                QMessageBox.critical(self, "错误", f"无法打开 PDF: {e}")
+                messagebox.showerror("错误", f"无法打开 PDF: {e}")
 
-    def on_mouse_press(self, event):
-        """点击切换锁定状态"""
-        if self.original_pixmap is None: return
-        
-        # 切换锁定开关
-        self.is_locked = not self.is_locked
-        
-        if not self.is_locked:
-            # 如果是解锁，则立即跟随当前点击位置
-            self.on_mouse_move(event)
-        else:
-            self.update_display()
+    def on_mouse_click(self, event):
+        if self.original_image:
+            self.is_locked = not self.is_locked
+            self.refresh_view()
 
     def on_mouse_move(self, event):
-        """只有在未锁定时才跟随鼠标移动"""
-        if self.original_pixmap is None or self.fixed_display_size is None or self.is_locked:
-            return
-        
-        lbl_w = self.preview_label.width()
-        pix_w = self.fixed_display_size.width()
-        offset_x = (lbl_w - pix_w) / 2
-        
-        rel_x = event.position().x() - offset_x
-        if 0 <= rel_x <= pix_w:
-            self.split_ratio = rel_x / pix_w
-            self.update_display()
+        if self.original_image and self.display_image and not self.is_locked:
+            canvas_w = self.canvas.winfo_width()
+            img_w = self.display_image.width # 修正此处
+            offset_x = (canvas_w - img_w) / 2
+            
+            rel_x = event.x - offset_x
+            if 0 <= rel_x <= img_w:
+                self.split_ratio = rel_x / img_w
+                self.refresh_view()
 
-    def update_display(self):
-        if self.original_pixmap is None or self.fixed_display_size is None:
+    def refresh_view(self):
+        if not self.original_image:
             return
 
-        canvas = self.original_pixmap.scaled(
-            self.fixed_display_size, 
-            Qt.AspectRatioMode.IgnoreAspectRatio, 
-            Qt.TransformationMode.SmoothTransformation
-        )
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        if canvas_w < 50 or canvas_h < 50: return
 
-        painter = QPainter(canvas)
+        img_w, img_h = self.original_image.size
+        # 留出边距
+        ratio = min((canvas_w-40)/img_w, (canvas_h-40)/img_h)
+        new_size = (max(1, int(img_w * ratio)), max(1, int(img_h * ratio)))
         
-        # 锁定状态下线变绿色，未锁定为红色
-        line_color = QColor(0, 255, 0, 220) if self.is_locked else QColor(255, 0, 0, 220)
-        painter.setPen(QPen(line_color, 4))
-        
-        x = int(canvas.width() * self.split_ratio)
-        painter.drawLine(x, 0, x, canvas.height())
-        
-        # 在线上方写状态
-        painter.setPen(QColor(255, 255, 255))
-        painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        status_text = "已固定(点击解锁)" if self.is_locked else "调整中(点击锁定)"
-        painter.drawText(x + 5, 30, status_text)
-        painter.end()
+        self.display_image = self.original_image.resize(new_size, Image.Resampling.LANCZOS)
+        self.tk_image = ImageTk.PhotoImage(self.display_image)
 
-        self.preview_label.setPixmap(canvas)
+        self.canvas.delete("all")
+        x_pos = canvas_w / 2
+        y_pos = canvas_h / 2
+        self.canvas.create_image(x_pos, y_pos, image=self.tk_image)
+
+        line_color = "#00FF00" if self.is_locked else "#FF0000"
+        img_x_start = x_pos - new_size[0]/2
+        line_x = img_x_start + new_size[0] * self.split_ratio
         
-        # 更新顶部文字信息
-        lock_status = "【已锁定】" if self.is_locked else "【调整中】"
-        self.info_label.setText(f"{lock_status} 当前切割比例: {self.split_ratio*100:.1f}% | 再次点击图片可重新选择")
+        self.canvas.create_line(line_x, y_pos - new_size[1]/2, line_x, y_pos + new_size[1]/2, 
+                                fill=line_color, width=3)
+
+        status = "【已锁定】" if self.is_locked else "【调整中】"
+        self.info_label.config(text=f"{status} 比例: {self.split_ratio*100:.1f}% | 点击图片锁定/解锁")
 
     def save_pdf(self):
         if not self.doc: return
         if not self.is_locked:
-            QMessageBox.warning(self, "提示", "请先在图片上点击以确定切割位置（线变绿表示确定）")
+            messagebox.showwarning("提示", "拖动红色分割线请先点击预览图锁定切割位置（线变绿）")
             return
 
-        out_path, _ = QFileDialog.getSaveFileName(self, "保存 PDF", "切分试卷.pdf", "PDF Files (*.pdf)")
+        out_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF Files", "*.pdf")])
         if not out_path: return
 
         try:
@@ -172,15 +124,13 @@ class PDFCutter(QMainWindow):
                 for clip in clips:
                     new_page = new_doc.new_page(width=a4_w, height=a4_h)
                     new_page.show_pdf_page(new_page.rect, self.doc, page.number, clip=clip)
-            
             new_doc.save(out_path)
             new_doc.close()
-            QMessageBox.information(self, "成功", "PDF 切分并保存成功！")
+            messagebox.showinfo("成功", "PDF 已切分保存成功！")
         except Exception as e:
-            QMessageBox.critical(self, "失败", str(e))
+            messagebox.showerror("失败", str(e))
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = PDFCutter()
-    window.show()
-    sys.exit(app.exec())
+    root = tk.Tk()
+    app = PDFCutterTK(root)
+    root.mainloop()
