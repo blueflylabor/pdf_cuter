@@ -1,32 +1,33 @@
-name: Build EXE
+name: Build TK EXE
 on: [push]
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      # 1. 下载仓库代码 (更新到 v4)
+      # 1. 拉取代码
       - uses: actions/checkout@v4
 
-      # 2. 设置 Python 环境
+      # 2. 设置 Python 环境 (推荐使用 3.11，兼容性最稳)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 3. 安装依赖 (加入卸载 pathlib 的步骤防止报错)
+      # 3. 安装必要的依赖库
       - name: Install dependencies
         run: |
           pip uninstall -y pathlib
-          pip install PyQt6 PyMuPDF pyinstaller
+          pip install pymupdf pillow pyinstaller
 
       # 4. 执行打包命令
+      # 注意：如果你的文件名改成了 cut_gui_tk.py，请把下面最后一行也改掉
       - name: Build EXE
         run: |
-          pyinstaller --noconsole --onefile --clean --name "PDF试卷切分工具" --collect-all PyQt6 cut_gui.py
+          pyinstaller --noconsole --onefile --clean --name "PDF试卷切分工具_TK" cut_gui.py
 
-      # 5. 上传结果 (修复 Deprecated 报错，更新到 v4)
+      # 5. 上传生成的 EXE 文件
       - name: Upload result
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: dist/PDF试卷切分工具.exe
+          path: dist/PDF试卷切分工具_TK.exe
