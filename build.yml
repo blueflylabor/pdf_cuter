@@ -1,0 +1,22 @@
+name: Build EXE
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install PyQt6 PyMuPDF pyinstaller
+      - name: Build EXE
+        run: |
+          pyinstaller --noconsole --onefile --name "PDF试卷切分工具" cut_gui.py
+      - name: Upload result
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-exe
+          path: dist/PDF试卷切分工具.exe
