@@ -1,5 +1,8 @@
-import sys
 import os
+import sys
+
+# 解决 PyQt6 插件路径问题
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = ""
 import fitz  # PyMuPDF
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QFileDialog, QLabel, QMessageBox)

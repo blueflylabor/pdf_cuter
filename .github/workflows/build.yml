@@ -22,7 +22,7 @@ jobs:
       # 4. 执行打包命令
       - name: Build EXE
         run: |
-          pyinstaller --noconsole --onefile --clean --name "PDF试卷切分工具" cut_gui.py
+          pyinstaller --noconsole --onefile --clean --name "PDF试卷切分工具" --collect-all PyQt6 cut_gui.py
 
       # 5. 上传结果 (修复 Deprecated 报错，更新到 v4)
       - name: Upload result
